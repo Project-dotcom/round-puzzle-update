@@ -58,7 +58,7 @@ button{font:inherit;cursor:pointer;border:0;border-radius:calc(var(--u)*16);back
     <h1 id="title"></h1>
     <label id="up" for="f"><i>&#8593;</i>UPLOAD</label>
     <div id="join">atau gabung ke teman: <input id="code" maxlength="5" placeholder="KODE"><button id="joinBtn">GABUNG</button></div>
-    <p id="hint">Upload foto untuk mulai. Kalian akan menyusun 1 puzzle yang sama secara bersamaan.</p>
+    <p id="hint">Upload foto untuk mulai.</p>
   </div>
   <div id="bar"><span id="barTxt"></span><button id="copy">Salin link undangan</button></div>
   <div id="confirm"><div class="box"><h2>Atur puzzle</h2><img id="cprev" alt=""><p>Pilih jumlah potongan:</p><div id="sizes"></div><p id="cinfo"></p><div class="row"><button id="cstart">MULAI</button><button id="ccancel">BATAL</button></div></div></div>
@@ -220,6 +220,7 @@ let hl=null,camOK=false,lastT=-1,res=null,hstatus='Memuat kamera...',camErr='',c
 let hasMic=false,micOn=true,actx=null,selfAn=null;
 let sharing=false,shareSt=null,sendStream=null,view=null,curMusic=null;
 const calls={};
+const sv=document.createElement('video');sv.className='hv';sv.muted=true;sv.playsInline=true;sv.autoplay=true;document.body.appendChild(sv);
 const MIC=[CAM.x+CAM.w-104,CAM.y+10,92,38],MUSB=[CAM.x+CAM.w-204,CAM.y+10,92,38],SHB=[CAM.x+CAM.w-304,CAM.y+10,92,38],BIGB=[PAN.x+PW-200,PAN.y+10,190,44];
 const HELP={NotAllowedError:'Izin kamera diblokir: klik ikon gembok di address bar, izinkan Kamera, lalu klik kotak ini',
   NotFoundError:'Tidak ada kamera terdeteksi di perangkat ini',
@@ -258,13 +259,14 @@ async function startShare(){
   const base=at?[at]:(localStream?localStream.getAudioTracks():[]);
   sendStream=new MediaStream([vt,...base]);
   swapTracks(vt,at);
+  sv.srcObject=shareSt;sv.play().catch(()=>{});
   sharing=true;vt.onended=stopShare;
   bcast({t:'share',on:true});
   toast(at?'Layar dan suara dibagikan':'Layar dibagikan (tanpa suara)')}
 function stopShare(){
   if(!sharing)return;sharing=false;
   if(shareSt){shareSt.getTracks().forEach(t=>t.stop());shareSt=null}
-  sendStream=null;
+  sendStream=null;sv.srcObject=null;
   const cvt=localStream&&localStream.getVideoTracks()[0],cat=localStream&&localStream.getAudioTracks()[0];
   swapTracks(cvt||document.createElement('canvas').captureStream(1).getVideoTracks()[0],cat||null);
   bcast({t:'share',on:false});
@@ -502,8 +504,11 @@ function drawBig(){
 }
 function drawCam(){
   x.save();rr(CAM.x,CAM.y,CAM.w,CAM.h,18);x.lineWidth=5;x.strokeStyle=C.beige;x.stroke();
+  const pip=sharing&&sv.videoWidth>0;
+  if(pip){const k=Math.min(CAM.w/sv.videoWidth,CAM.h/sv.videoHeight),sw=sv.videoWidth*k,sh=sv.videoHeight*k;x.drawImage(sv,CAM.x+(CAM.w-sw)/2,CAM.y+(CAM.h-sh)/2,sw,sh)}
   if(camOK&&vid.videoWidth){
-    const s=Math.min(CAM.w/vid.videoWidth,CAM.h/vid.videoHeight),w=vid.videoWidth*s,h=vid.videoHeight*s,ox=CAM.x+(CAM.w-w)/2,oy=CAM.y+(CAM.h-h)/2;
+    const cx0=pip?CAM.x+CAM.w-250:CAM.x,cy0=pip?CAM.y+CAM.h-146:CAM.y,cw0=pip?240:CAM.w,ch0=pip?136:CAM.h;
+    const s=Math.min(cw0/vid.videoWidth,ch0/vid.videoHeight),w=vid.videoWidth*s,h=vid.videoHeight*s,ox=cx0+(cw0-w)/2,oy=cy0+(ch0-h)/2;
     x.save();x.translate(ox+w,oy);x.scale(-1,1);x.drawImage(vid,0,0,w,h);x.restore();
     if(res&&res.landmarks)for(const L of res.landmarks){
       const P=L.map(l=>[ox+(1-l.x)*w,oy+l.y*h]);x.lineWidth=2.5;x.strokeStyle=C.blue;x.beginPath();
@@ -511,7 +516,7 @@ function drawCam(){
       for(const i of[4,8]){x.beginPath();x.arc(P[i][0],P[i][1],8,0,7);x.fillStyle=C.coral;x.fill()}}
   }else person(CAM.x+CAM.w/2,CAM.y+CAM.h/2-30,80);
   x.textAlign='center';x.textBaseline='middle';x.fillStyle=C.gray;x.font='28px Chewy,system-ui';
-  x.fillText(hstatus,CAM.x+CAM.w/2,CAM.y+CAM.h-(camErr?96:30));
+  if(!pip)x.fillText(hstatus,CAM.x+CAM.w/2,CAM.y+CAM.h-(camErr?96:30));
   if(camErr){x.font='20px Chewy,system-ui';x.fillStyle=C.coral;
     const wrap=(t,y)=>{let ln='',yy=y;for(const w of t.split(' ')){if(x.measureText(ln+w).width>CAM.w-60){x.fillText(ln,CAM.x+CAM.w/2,yy);ln='';yy+=24}ln+=w+' '}x.fillText(ln,CAM.x+CAM.w/2,yy)};
     wrap(camHelp||camErr.slice(0,90),CAM.y+CAM.h-66);
