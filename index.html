@@ -47,6 +47,9 @@ button{font:inherit;cursor:pointer;border:0;border-radius:calc(var(--u)*16);back
 #music button{font-size:max(14px,calc(var(--u)*24));padding:calc(var(--u)*6) calc(var(--u)*16)}
 #mgo{background:var(--purple)}
 #mx{background:#bbb}
+#music.yt{width:max(356px,calc(var(--u)*420))}
+#ytbox{display:none;width:100%;aspect-ratio:16/9;border-radius:calc(var(--u)*12);overflow:hidden;background:#000}
+#ytbox iframe{width:100%;height:100%;border:0}
 #mfr{width:100%;height:max(80px,calc(var(--u)*80));border:0;border-radius:calc(var(--u)*12);display:none}
 .hv{position:fixed;left:0;top:0;width:160px;height:90px;opacity:0;pointer-events:none;z-index:-1}
 </style>
@@ -62,7 +65,7 @@ button{font:inherit;cursor:pointer;border:0;border-radius:calc(var(--u)*16);back
   </div>
   <div id="bar"><span id="barTxt"></span><button id="copy">Salin link undangan</button></div>
   <div id="confirm"><div class="box"><h2>Atur puzzle</h2><img id="cprev" alt=""><p>Pilih jumlah potongan:</p><div id="sizes"></div><p id="cinfo"></p><div class="row"><button id="cstart">MULAI</button><button id="ccancel">BATAL</button></div></div></div>
-  <div id="music"><div class="mrow"><input id="murl" placeholder="Tempel link Spotify (lagu / playlist)"><button id="mgo">PUTAR</button><button id="mx">&times;</button></div><iframe id="mfr" allow="encrypted-media; clipboard-write" title="Spotify"></iframe></div>
+  <div id="music"><div class="mrow"><input id="murl" placeholder="Tempel link Spotify atau YouTube"><button id="mgo">PUTAR</button><button id="mx">&times;</button></div><iframe id="mfr" allow="encrypted-media; clipboard-write" title="Spotify"></iframe><div id="ytbox"></div></div>
   <div id="toast"></div>
 </div>
 <div id="rotate"><b>&#8635;</b>Putar HP ke mode landscape (miring) agar game tampil penuh</div>
@@ -273,15 +276,58 @@ function stopShare(){
   toast('Berbagi layar dihentikan')}
 function toggleShare(){if(sharing)stopShare();else startShare()}
 const SP=/(?:open\.spotify\.com\/(?:intl-[a-z]+\/)?|spotify:)(track|album|playlist|episode|show|artist)[\/:]([A-Za-z0-9]{10,30})/;
-function spotifyEmbed(u){const m=SP.exec(String(u||''));return m?'https://open.spotify.com/embed/'+m[1]+'/'+m[2]:null}
+const RYV=/(?:youtube\.com\/(?:watch\?(?:[^#\s]*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+const RYL=/[?&]list=([A-Za-z0-9_-]{10,60})/;
+function parseMusic(u){
+  u=String(u||'');
+  const sp=SP.exec(u);if(sp)return{k:'sp',src:'https://open.spotify.com/embed/'+sp[1]+'/'+sp[2]};
+  const v=RYV.exec(u),l=RYL.exec(u);
+  if(v||l)return{k:'yt',v:v?v[1]:null,l:l?l[1]:null};
+  return null}
+let ytp=null,ytSup=0,ytLoading=false;
+const ytCbs=[];
+function loadYT(cb){
+  if(window.YT&&window.YT.Player){cb();return}
+  ytCbs.push(cb);
+  if(ytLoading)return;
+  ytLoading=true;
+  window.onYouTubeIframeAPIReady=()=>{while(ytCbs.length)ytCbs.shift()()};
+  const sc=document.createElement('script');sc.src='https://www.youtube.com/iframe_api';document.head.appendChild(sc)}
+function stopYT(){if(ytp){try{ytp.destroy()}catch(e){}ytp=null}$('#ytbox').innerHTML=''}
+function ytPlay(v,l){
+  stopYT();$('#ytbox').innerHTML='<div id="ytp"></div>';
+  loadYT(()=>{
+    const pv={playsinline:1,rel:0,autoplay:1,origin:location.origin};
+    if(l){pv.list=l;pv.listType='playlist'}
+    ytp=new window.YT.Player('ytp',{width:'100%',height:'100%',videoId:v||undefined,playerVars:pv,events:{
+      onReady:e=>{try{e.target.getIframe().allow='autoplay; encrypted-media'}catch(x){}},
+      onStateChange:e=>{
+        if(Date.now()<ytSup||!ytp)return;
+        if(e.data===1)bcast({t:'yt',a:'play',time:ytp.getCurrentTime()});
+        else if(e.data===2)bcast({t:'yt',a:'pause',time:ytp.getCurrentTime()})},
+      onError:()=>toast('Video ini tidak bisa diputar di sini (dibatasi pemiliknya)')}})})}
+function ytRemote(m){
+  if(!ytp||!ytp.getCurrentTime)return;
+  ytSup=Date.now()+1500;
+  const t=+m.time||0;
+  try{
+    if(Math.abs(ytp.getCurrentTime()-t)>1.5)ytp.seekTo(t,true);
+    if(m.a==='play')ytp.playVideo();else ytp.pauseVideo()}catch(e){}}
 function loadMusic(url,by){
-  const src=spotifyEmbed(url);if(!src)return false;
-  const fr=$('#mfr');if(fr.dataset.u!==src){fr.src=src;fr.dataset.u=src}
-  fr.style.display='block';$('#music').classList.add('on');curMusic=url;
-  if(by)toast(by+' memutar musik. Tekan play di pemutar Spotify');
+  const m=parseMusic(url);if(!m)return false;
+  const fr=$('#mfr'),box=$('#ytbox'),card=$('#music');
+  curMusic=url;card.classList.add('on');
+  if(m.k==='sp'){
+    stopYT();card.classList.remove('yt');box.style.display='none';
+    if(fr.dataset.u!==m.src){fr.src=m.src;fr.dataset.u=m.src}
+    fr.style.display='block'}
+  else{
+    fr.src='about:blank';fr.dataset.u='';fr.style.display='none';
+    card.classList.add('yt');box.style.display='block';ytPlay(m.v,m.l)}
+  if(by)toast(by+' memutar musik'+(m.k==='sp'?'. Tekan play di pemutar Spotify':''));
   return true}
 function toggleMusic(){$('#music').classList.toggle('on')}
-$('#mgo').onclick=()=>{const u=$('#murl').value.trim();if(!loadMusic(u)){toast('Link Spotify tidak dikenali');return}bcast({t:'music',url:u})};
+$('#mgo').onclick=()=>{const u=$('#murl').value.trim();if(!loadMusic(u)){toast('Link Spotify atau YouTube tidak dikenali');return}bcast({t:'music',url:u})};
 $('#mx').onclick=()=>$('#music').classList.remove('on');
 async function startCam(){
   camOK=false;camErr='';camHelp='';hstatus='Meminta izin kamera & mikrofon...';
@@ -391,6 +437,7 @@ function onData(id,m){
   else if(m.t==='bye'){removeFriend(id)}
   else if(m.t==='share'){if(f){f.sharing=!!m.on;if(m.on){view=f.id;toast('Teman membagikan layar')}else if(view===f.id)view=null}}
   else if(m.t==='music'){loadMusic(m.url,'Teman')}
+  else if(m.t==='yt'){ytRemote(m)}
 }
 function setupPeer(pr){
   pr.on('connection',c=>wire(c,false));
