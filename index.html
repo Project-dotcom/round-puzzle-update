@@ -50,6 +50,14 @@ button{font:inherit;cursor:pointer;border:0;border-radius:calc(var(--u)*16);back
 #music.yt{width:max(356px,calc(var(--u)*420))}
 #ytbox{display:none;width:100%;aspect-ratio:16/9;border-radius:calc(var(--u)*12);overflow:hidden;background:#000}
 #ytbox iframe{width:100%;height:100%;border:0}
+#mh{display:flex;align-items:center;gap:calc(var(--u)*8);cursor:grab;touch-action:none;color:var(--purple);font-size:max(14px,calc(var(--u)*24))}
+#mh span{flex:1;pointer-events:none}
+#mh button{background:var(--purple)}
+#mbody{display:flex;flex-direction:column;gap:calc(var(--u)*8)}
+#mstat{display:none;margin:0;font-size:max(12px,calc(var(--u)*20));color:var(--coral)}
+#music.min,#music.min.yt{width:calc(var(--u)*330);min-width:240px;gap:0}
+#music.min .mrow{display:none}
+#music.min #mbody{height:0;overflow:hidden;opacity:0;pointer-events:none}
 #mfr{width:100%;height:max(80px,calc(var(--u)*80));border:0;border-radius:calc(var(--u)*12);display:none}
 .hv{position:fixed;left:0;top:0;width:160px;height:90px;opacity:0;pointer-events:none;z-index:-1}
 </style>
@@ -65,7 +73,7 @@ button{font:inherit;cursor:pointer;border:0;border-radius:calc(var(--u)*16);back
   </div>
   <div id="bar"><span id="barTxt"></span><button id="copy">Salin link undangan</button></div>
   <div id="confirm"><div class="box"><h2>Atur puzzle</h2><img id="cprev" alt=""><p>Pilih jumlah potongan:</p><div id="sizes"></div><p id="cinfo"></p><div class="row"><button id="cstart">MULAI</button><button id="ccancel">BATAL</button></div></div></div>
-  <div id="music"><div class="mrow"><input id="murl" placeholder="Tempel link Spotify atau YouTube"><button id="mgo">PUTAR</button><button id="mx">&times;</button></div><iframe id="mfr" allow="encrypted-media; clipboard-write" title="Spotify"></iframe><div id="ytbox"></div></div>
+  <div id="music"><div id="mh"><span>Musik</span><button id="mpp">PLAY/JEDA</button><button id="mmin">&minus;</button><button id="mx">&times;</button></div><div class="mrow"><input id="murl" placeholder="Tempel link Spotify atau YouTube"><button id="mgo">PUTAR</button></div><div id="mbody"><iframe id="mfr" allow="encrypted-media; clipboard-write" title="Spotify"></iframe><div id="ytbox"></div><p id="mstat"></p></div></div>
   <div id="toast"></div>
 </div>
 <div id="rotate"><b>&#8635;</b>Putar HP ke mode landscape (miring) agar game tampil penuh</div>
@@ -284,28 +292,49 @@ function parseMusic(u){
   const v=RYV.exec(u),l=RYL.exec(u);
   if(v||l)return{k:'yt',v:v?v[1]:null,l:l?l[1]:null};
   return null}
-let ytp=null,ytSup=0,ytLoading=false;
+let ytp=null,ytSup=0,ytLoading=false,ytOk=false,ytTimer=0,ytTok=0,ytCur=null;
 const ytCbs=[];
+const YTBAN='Pemilik melarang video ini diputar di luar YouTube. Coba SHARE tab YouTube dengan audio';
+const YTERR={2:'Link YouTube tidak valid',5:'Pemutar YouTube bermasalah',100:'Video tidak ditemukan atau privat',101:YTBAN,150:YTBAN};
+function mstat(t){const e=$('#mstat');e.textContent=t||'';e.style.display=t?'block':'none'}
+function setMini(){$('#mmin').innerHTML=$('#music').classList.contains('min')?'&#9633;':'&minus;'}
 function loadYT(cb){
   if(window.YT&&window.YT.Player){cb();return}
   ytCbs.push(cb);
   if(ytLoading)return;
   ytLoading=true;
   window.onYouTubeIframeAPIReady=()=>{while(ytCbs.length)ytCbs.shift()()};
-  const sc=document.createElement('script');sc.src='https://www.youtube.com/iframe_api';document.head.appendChild(sc)}
-function stopYT(){if(ytp){try{ytp.destroy()}catch(e){}ytp=null}$('#ytbox').innerHTML=''}
+  const sc=document.createElement('script');sc.src='https://www.youtube.com/iframe_api';
+  sc.onerror=()=>{ytLoading=false;ytCbs.length=0;ytFallback()};
+  document.head.appendChild(sc)}
+function ytFallback(){
+  if(!ytCur)return;
+  clearTimeout(ytTimer);
+  if(ytp){try{ytp.destroy()}catch(e){}ytp=null}
+  const{v,l}=ytCur;
+  const src=v?'https://www.youtube.com/embed/'+v+'?autoplay=1&rel=0&playsinline=1'+(l?'&list='+l:''):'https://www.youtube.com/embed/videoseries?autoplay=1&list='+l;
+  $('#ytbox').innerHTML='<iframe src="'+src+'" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';
+  mstat('Mode sederhana: putar dan jeda tidak tersinkron antar pemain');
+  $('#music').classList.remove('min');setMini()}
+function stopYT(){
+  ytTok++;clearTimeout(ytTimer);ytOk=false;ytCur=null;
+  if(ytp){try{ytp.destroy()}catch(e){}ytp=null}
+  $('#ytbox').innerHTML='';mstat('')}
 function ytPlay(v,l){
-  stopYT();$('#ytbox').innerHTML='<div id="ytp"></div>';
+  stopYT();ytCur={v,l};$('#ytbox').innerHTML='<div id="ytp"></div>';
+  const tok=++ytTok;
+  ytTimer=setTimeout(()=>{if(!ytOk&&tok===ytTok)ytFallback()},7000);
   loadYT(()=>{
+    if(tok!==ytTok)return;
     const pv={playsinline:1,rel:0,autoplay:1,origin:location.origin};
     if(l){pv.list=l;pv.listType='playlist'}
     ytp=new window.YT.Player('ytp',{width:'100%',height:'100%',videoId:v||undefined,playerVars:pv,events:{
-      onReady:e=>{try{e.target.getIframe().allow='autoplay; encrypted-media'}catch(x){}},
+      onReady:e=>{ytOk=true;try{e.target.getIframe().allow='autoplay; encrypted-media'}catch(x){}},
       onStateChange:e=>{
         if(Date.now()<ytSup||!ytp)return;
         if(e.data===1)bcast({t:'yt',a:'play',time:ytp.getCurrentTime()});
         else if(e.data===2)bcast({t:'yt',a:'pause',time:ytp.getCurrentTime()})},
-      onError:()=>toast('Video ini tidak bisa diputar di sini (dibatasi pemiliknya)')}})})}
+      onError:e=>{ytOk=true;mstat(YTERR[e.data]||('Gagal memutar (kode '+e.data+')'));$('#music').classList.remove('min');setMini()}}})})}
 function ytRemote(m){
   if(!ytp||!ytp.getCurrentTime)return;
   ytSup=Date.now()+1500;
@@ -316,16 +345,33 @@ function ytRemote(m){
 function loadMusic(url,by){
   const m=parseMusic(url);if(!m)return false;
   const fr=$('#mfr'),box=$('#ytbox'),card=$('#music');
-  curMusic=url;card.classList.add('on');
+  curMusic=url;card.classList.add('on');mstat('');
   if(m.k==='sp'){
-    stopYT();card.classList.remove('yt');box.style.display='none';
+    stopYT();card.classList.remove('yt','min');box.style.display='none';
     if(fr.dataset.u!==m.src){fr.src=m.src;fr.dataset.u=m.src}
     fr.style.display='block'}
   else{
     fr.src='about:blank';fr.dataset.u='';fr.style.display='none';
-    card.classList.add('yt');box.style.display='block';ytPlay(m.v,m.l)}
+    card.classList.add('yt','min');box.style.display='block';ytPlay(m.v,m.l)}
+  setMini();
   if(by)toast(by+' memutar musik'+(m.k==='sp'?'. Tekan play di pemutar Spotify':''));
   return true}
+$('#mmin').onclick=()=>{$('#music').classList.toggle('min');setMini()};
+$('#mpp').onclick=()=>{
+  if(ytp&&ytp.getPlayerState){try{if(ytp.getPlayerState()===1)ytp.pauseVideo();else ytp.playVideo()}catch(e){}}
+  else{toast('Pakai tombol play di pemutar');$('#music').classList.remove('min');setMini()}};
+let mdrag=null;
+$('#mh').addEventListener('pointerdown',e=>{
+  if(e.target.tagName==='BUTTON')return;
+  const r=$('#music').getBoundingClientRect();mdrag={dx:e.clientX-r.left,dy:e.clientY-r.top};
+  $('#mh').setPointerCapture(e.pointerId)});
+$('#mh').addEventListener('pointermove',e=>{
+  if(!mdrag)return;
+  const st=stage.getBoundingClientRect(),el=$('#music');
+  const lx=Math.max(0,Math.min(st.width-el.offsetWidth,e.clientX-mdrag.dx-st.left));
+  const ly=Math.max(0,Math.min(st.height-el.offsetHeight,e.clientY-mdrag.dy-st.top));
+  el.style.left=lx+'px';el.style.top=ly+'px';el.style.bottom='auto'});
+$('#mh').addEventListener('pointerup',()=>{mdrag=null});
 function toggleMusic(){$('#music').classList.toggle('on')}
 $('#mgo').onclick=()=>{const u=$('#murl').value.trim();if(!loadMusic(u)){toast('Link Spotify atau YouTube tidak dikenali');return}bcast({t:'music',url:u})};
 $('#mx').onclick=()=>$('#music').classList.remove('on');
